@@ -1,0 +1,194 @@
+"""
+Dashboard Widget - Real-time system overview and key metrics
+"""
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QProgressBar,
+    QGridLayout, QFrame
+)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtChart import QChart, QChartView, QPieSeries, QPieSlice
+from PyQt6.QtCore import QPointF
+
+
+class DashboardWidget(QWidget):
+    """Dashboard with real-time metrics overview"""
+    
+    def __init__(self):
+        super().__init__()
+        self._init_ui()
+    
+    def _init_ui(self):
+        """Initialize dashboard UI"""
+        layout = QVBoxLayout()
+        
+        # Top metrics row
+        metrics_layout = QHBoxLayout()
+        
+        # Total requests
+        self.total_requests_widget = self._create_metric_card("Total Requests", "0", "#2196F3")
+        metrics_layout.addWidget(self.total_requests_widget)
+        
+        # Success rate
+        self.success_rate_widget = self._create_metric_card("Success Rate", "0%", "#4CAF50")
+        metrics_layout.addWidget(self.success_rate_widget)
+        
+        # Failed requests
+        self.failed_requests_widget = self._create_metric_card("Failed", "0", "#F44336")
+        metrics_layout.addWidget(self.failed_requests_widget)
+        
+        # Downloaded bytes
+        self.bytes_downloaded_widget = self._create_metric_card("Downloaded", "0 MB", "#FF9800")
+        metrics_layout.addWidget(self.bytes_downloaded_widget)
+        
+        layout.addLayout(metrics_layout)
+        
+        # Charts section
+        charts_layout = QHBoxLayout()
+        
+        # Success/Failure pie chart
+        self.pie_chart = self._create_pie_chart()
+        charts_layout.addWidget(self.pie_chart)
+        
+        # Status indicators
+        status_layout = QVBoxLayout()
+        status_layout.addWidget(QLabel("System Status"))
+        
+        self.status_labels = {}
+        for status_name in ["Requests/sec", "Avg Latency", "Memory Usage", "CPU Usage"]:
+            status_widget = self._create_status_indicator(status_name, "0")
+            self.status_labels[status_name] = status_widget
+            status_layout.addWidget(status_widget)
+        
+        charts_layout.addLayout(status_layout)
+        
+        layout.addLayout(charts_layout)
+        self.setLayout(layout)
+    
+    def _create_metric_card(self, title: str, value: str, color: str) -> QGroupBox:
+        """Create a metric card widget"""
+        card = QGroupBox(title)
+        card_layout = QVBoxLayout()
+        
+        value_label = QLabel(value)
+        font = QFont()
+        font.setPointSize(20)
+        font.setBold(True)
+        value_label.setFont(font)
+        value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        card_layout.addWidget(value_label)
+        card.setLayout(card_layout)
+        
+        # Set color border
+        card.setStyleSheet(f"""
+            QGroupBox {{
+                border: 2px solid {color};
+                border-radius: 5px;
+                padding: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 3px 0 3px;
+            }}
+        """)
+        
+        # Store value label for updates
+        card.value_label = value_label
+        
+        return card
+    
+    def _create_pie_chart(self) -> QChartView:
+        """Create pie chart for success/failure ratio"""
+        chart = QChart()
+        chart.setTitle("Request Success Distribution")
+        chart.setAnimationOptions(QChart.AnimationOption.SeriesAnimations)
+        chart.setBackgroundVisible(False)
+        
+        series = QPieSeries()
+        
+        # Success slice
+        success_slice = QPieSlice("Success", 75)
+        success_slice.setColor(QColor(76, 175, 80))
+        success_slice.setLabelVisible(True)
+        series.append(success_slice)
+        
+        # Failed slice
+        failed_slice = QPieSlice("Failed", 25)
+        failed_slice.setColor(QColor(244, 67, 54))
+        failed_slice.setLabelVisible(True)
+        series.append(failed_slice)
+        
+        chart.addSeries(series)
+        
+        chart_view = QChartView(chart)
+        chart_view.setRenderHint(chart_view.RenderHint.Antialiasing)
+        
+        self.pie_series = series
+        return chart_view
+    
+    def _create_status_indicator(self, name: str, value: str) -> QFrame:
+        """Create a status indicator box"""
+        frame = QFrame()
+        layout = QHBoxLayout()
+        
+        name_label = QLabel(name)
+        name_label.setMinimumWidth(100)
+        
+        value_label = QLabel(value)
+        value_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        value_label.setMinimumWidth(100)
+        font = QFont()
+        font.setBold(True)
+        value_label.setFont(font)
+        
+        layout.addWidget(name_label)
+        layout.addStretch()
+        layout.addWidget(value_label)
+        
+        frame.setLayout(layout)
+        frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #555;
+                border-radius: 3px;
+                padding: 5px;
+                background-color: #2b2b2b;
+            }
+        """)
+        
+        frame.value_label = value_label
+        return frame
+    
+    def update_metrics(self, summary: dict):
+        """Update dashboard with new metrics"""
+        try:
+            total = summary.get('total_requests', 0)
+            successes = summary.get('total_successes', 0)
+            failures = summary.get('total_failures', 0)
+            bytes_dl = summary.get('total_bytes_downloaded', 0)
+            
+            success_rate = (successes / total * 100) if total > 0 else 0
+            
+            # Update metric cards
+            self.total_requests_widget.value_label.setText(str(total))
+            self.success_rate_widget.value_label.setText(f"{success_rate:.1f}%")
+            self.failed_requests_widget.value_label.setText(str(failures))
+            
+            bytes_mb = bytes_dl / (1024 ** 2)
+            self.bytes_downloaded_widget.value_label.setText(f"{bytes_mb:.2f} MB")
+            
+            # Update pie chart
+            if total > 0:
+                success_slice = self.pie_series.slices()[0]
+                failed_slice = self.pie_series.slices()[1]
+                
+                success_slice.setValue(successes)
+                failed_slice.setValue(failures)
+                
+                success_slice.setLabel(f"Success ({successes})")
+                failed_slice.setLabel(f"Failed ({failures})")
+        
+        except Exception as e:
+            print(f"Dashboard update error: {e}")
