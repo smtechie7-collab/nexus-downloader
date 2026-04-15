@@ -1,0 +1,73 @@
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>fdee46e7-dfd8-47a5-b937-650e97846a68</ProjectGuid>
+    <ProjectHome>.</ProjectHome>
+    <StartupFile>nexus_downloader.py</StartupFile>
+    <SearchPath>.</SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <Name>nexus-downloader</Name>
+    <RootNamespace>nexus-downloader</RootNamespace>
+    <InterpreterId>MSBuild|env2|$(MSBuildProjectFullPath)</InterpreterId>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="nexus_downloader.py" />
+    <Compile Include="core\__init__.py" />
+    <Compile Include="core\priority_queue.py" />
+    <Compile Include="core\rate_limiter.py" />
+    <Compile Include="core\resource_guard.py" />
+    <Compile Include="core\router.py" />
+    <Compile Include="downloader\__init__.py" />
+    <Compile Include="downloader\bandwidth_manager.py" />
+    <Compile Include="downloader\download_manager.py" />
+    <Compile Include="engines\__init__.py" />
+    <Compile Include="engines\base_engine.py" />
+    <Compile Include="engines\fast_engine_v1.py" />
+    <Compile Include="monitoring\__init__.py" />
+    <Compile Include="monitoring\logger.py" />
+    <Compile Include="pipeline\__init__.py" />
+    <Compile Include="pipeline\schema_validator.py" />
+    <Compile Include="pipeline\validator.py" />
+    <Compile Include="storage\__init__.py" />
+    <Compile Include="storage\cache.py" />
+    <Compile Include="storage\deduplicator.py" />
+    <Compile Include="utils\__init__.py" />
+    <Compile Include="utils\constants.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="config.yaml" />
+    <Content Include="requirements.txt" />
+    <Content Include=".gitignore" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="core\" />
+    <Folder Include="downloader\" />
+    <Folder Include="engines\" />
+    <Folder Include="monitoring\" />
+    <Folder Include="pipeline\" />
+    <Folder Include="storage\" />
+    <Folder Include="utils\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Interpreter Include="env2\">
+      <Id>env2</Id>
+      <Version>3.9</Version>
+      <Description>env2 (Python 3.9 (64-bit))</Description>
+      <InterpreterPath>Scripts\python.exe</InterpreterPath>
+      <WindowsInterpreterPath>Scripts\pythonw.exe</WindowsInterpreterPath>
+      <PathEnvironmentVariable>PYTHONPATH</PathEnvironmentVariable>
+      <Architecture>X64</Architecture>
+    </Interpreter>
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+</Project>

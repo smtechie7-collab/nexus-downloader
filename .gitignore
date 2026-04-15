@@ -1,10 +1,51 @@
-venv/
-__pycache__/
-*.db
+==========================================
+
+NEXUS MEDIA DOWNLOADER - GITIGNORE
+
+==========================================
+
+1. Project Specific (CRITICAL)
+
+downloads/
 *.part
 logs/
-.env.DS_Store
-*.pyc
+
+2. Python Core
+
+pycache/
+*.py[cod]
+*$py.class
+*.so
+
+3. Virtual Environments
+
+venv/
 .venv/
-.vscode/
+env/
+ENV/
+
+4. Secrets & Databases (Security)
+
+.env
+*.db
+*.sqlite3
+
+5. IDEs & Editors (Visual Studio / VS Code)
+
 .vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+6. OS Generated Files
+
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
