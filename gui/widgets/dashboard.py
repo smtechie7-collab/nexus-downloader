@@ -8,8 +8,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor
-from PyQt6.QtChart import QChart, QChartView, QPieSeries, QPieSlice
-from PyQt6.QtCore import QPointF
 
 
 class DashboardWidget(QWidget):
@@ -100,34 +98,56 @@ class DashboardWidget(QWidget):
         
         return card
     
-    def _create_pie_chart(self) -> QChartView:
-        """Create pie chart for success/failure ratio"""
-        chart = QChart()
-        chart.setTitle("Request Success Distribution")
-        chart.setAnimationOptions(QChart.AnimationOption.SeriesAnimations)
-        chart.setBackgroundVisible(False)
+    def _create_pie_chart(self) -> QWidget:
+        """Create simple success/failure display"""
+        widget = QWidget()
+        layout = QVBoxLayout()
         
-        series = QPieSeries()
+        title = QLabel("Request Success Distribution")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        layout.addWidget(title)
         
-        # Success slice
-        success_slice = QPieSlice("Success", 75)
-        success_slice.setColor(QColor(76, 175, 80))
-        success_slice.setLabelVisible(True)
-        series.append(success_slice)
+        # Success progress bar
+        self.success_label = QLabel("Success: 75%")
+        self.success_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
+        layout.addWidget(self.success_label)
         
-        # Failed slice
-        failed_slice = QPieSlice("Failed", 25)
-        failed_slice.setColor(QColor(244, 67, 54))
-        failed_slice.setLabelVisible(True)
-        series.append(failed_slice)
+        self.success_bar = QProgressBar()
+        self.success_bar.setValue(75)
+        self.success_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #555;
+                border-radius: 5px;
+                text-align: center;
+            }
+            QProgressBar::chunk {
+                background-color: #4CAF50;
+            }
+        """)
+        layout.addWidget(self.success_bar)
         
-        chart.addSeries(series)
+        # Failed progress bar
+        self.failed_label = QLabel("Failed: 25%")
+        self.failed_label.setStyleSheet("color: #F44336; font-weight: bold;")
+        layout.addWidget(self.failed_label)
         
-        chart_view = QChartView(chart)
-        chart_view.setRenderHint(chart_view.RenderHint.Antialiasing)
+        self.failed_bar = QProgressBar()
+        self.failed_bar.setValue(25)
+        self.failed_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #555;
+                border-radius: 5px;
+                text-align: center;
+            }
+            QProgressBar::chunk {
+                background-color: #F44336;
+            }
+        """)
+        layout.addWidget(self.failed_bar)
         
-        self.pie_series = series
-        return chart_view
+        widget.setLayout(layout)
+        return widget
     
     def _create_status_indicator(self, name: str, value: str) -> QFrame:
         """Create a status indicator box"""
@@ -179,16 +199,16 @@ class DashboardWidget(QWidget):
             bytes_mb = bytes_dl / (1024 ** 2)
             self.bytes_downloaded_widget.value_label.setText(f"{bytes_mb:.2f} MB")
             
-            # Update pie chart
-            if total > 0:
-                success_slice = self.pie_series.slices()[0]
-                failed_slice = self.pie_series.slices()[1]
+            # Update progress bars (simplified chart replacement)
+            if hasattr(self, 'success_bar') and hasattr(self, 'failed_bar'):
+                self.success_bar.setValue(int(success_rate))
+                self.failed_bar.setValue(int((failures / total * 100) if total > 0 else 0))
                 
-                success_slice.setValue(successes)
-                failed_slice.setValue(failures)
-                
-                success_slice.setLabel(f"Success ({successes})")
-                failed_slice.setLabel(f"Failed ({failures})")
+                # Update labels
+                if hasattr(self, 'success_label') and hasattr(self, 'failed_label'):
+                    self.success_label.setText(f"Success: {success_rate:.1f}%")
+                    failed_rate = (failures / total * 100) if total > 0 else 0
+                    self.failed_label.setText(f"Failed: {failed_rate:.1f}%")
         
         except Exception as e:
             print(f"Dashboard update error: {e}")
