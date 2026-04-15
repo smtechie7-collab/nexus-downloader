@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QThread
 from PyQt6.QtGui import QIcon, QColor, QFont
-import pyqtdarktheme
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -24,7 +23,7 @@ from gui.widgets.task_manager import TaskManagerWidget
 from gui.widgets.metrics_viewer import MetricsViewerWidget
 from gui.widgets.log_viewer import LogViewerWidget
 from gui.widgets.settings_panel import SettingsPanelWidget
-from gui.styles import apply_stylesheet
+from gui.styles import apply_stylesheet, COLORS
 from monitoring.metrics import get_metrics
 from monitoring.logger import get_logger
 
@@ -72,9 +71,6 @@ class NexusDownloaderApp(QMainWindow):
         self.setWindowTitle("Nexus Downloader - Media Extraction Platform")
         self.setWindowIcon(self._create_icon())
         self.setGeometry(100, 100, 1400, 900)
-        
-        # Apply dark theme
-        self.setStyle(pyqtdarktheme.setup_theme())
         
         # Initialize UI
         self._init_ui()
@@ -192,8 +188,8 @@ def main():
     """Main entry point"""
     app = QApplication(sys.argv)
     
-    # Apply theme
-    app.setStyle(pyqtdarktheme.setup_theme("auto"))
+    # Apply custom theme
+    apply_stylesheet(app)
     
     # Create and show main window
     window = NexusDownloaderApp()
