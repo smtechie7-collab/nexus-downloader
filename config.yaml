@@ -1,18 +1,31 @@
+# Nexus Downloader Configuration
+# Constitution v5.0 Compliant Configuration
+
+# Rate Limiting Configuration
 rate_limit:
-  per_domain: 5
-  global: 50
+  per_domain: 5  # Requests per second per domain
+  global: 50  # Global requests per second
 
+# Resource Protection
 resources:
-  max_threads: 8
-  memory_limit_percent: 85
-  disk_min_gb: 2
+  memory_limit_percent: 85  # Pause if RAM usage exceeds this %
+  disk_min_gb: 2  # Minimum free disk space required
+  max_threads: 8  # Maximum concurrent download threads
 
+# Download Configuration
 download:
-  path: "./downloads"
-  chunk_size: 1048576
+  path: "./downloads"  # Download directory
+  chunk_size: 1048576  # Download chunk size in bytes
 
+# Bandwidth Management
 bandwidth:
-  max_kbps: 1024
+  max_kbps: 1024  # Maximum download speed (0 = unlimited)
 
+# Proxy Configuration
+proxy:
+  strategy: "round-robin"  # round-robin, random, weighted
+  list: []  # List of proxy URLs
+
+# Retry Configuration
 retry:
   max_attempts: 3

@@ -13,22 +13,32 @@ class FastEngineV1(BaseEngine):
         """Mock extraction simulating a fast API/Regex scrape."""
         await asyncio.sleep(0.5)  # Simulate network call
         
-        # Simulating basic parsing logic (Sandbox Test)
-        if "error" in url:
-            raise ValueError("Simulated parsing error")
-
-        return {
-            "status": Status.SUCCESS.value,
-            "source": self.source_name,
-            "media": [
-                {
-                    # Changed to a highly reliable public test video
-                    "url": "https://www.w3schools.com/html/mov_bbb.mp4",
-                    "type": "video",
-                    "quality": "1080p",
-                    "metadata": {"title": "Big_Buck_Bunny_Test"}
-                }
-            ],
-            "error_type": ErrorType.NONE.value,
-            "error_msg": None
-        }
+        try:
+            # Simulating basic parsing logic (Sandbox Test)
+            if "error" in url:
+                raise ValueError("Simulated parsing error")
+            
+            return {
+                "status": Status.SUCCESS.value,
+                "source": self.source_name,
+                "media": [
+                    {
+                        # Changed to a highly reliable public test video
+                        "url": "https://www.w3schools.com/html/mov_bbb.mp4",
+                        "type": "video",
+                        "quality": "1080p",
+                        "metadata": {"title": "Big_Buck_Bunny_Test"}
+                    }
+                ],
+                "error_type": ErrorType.NONE.value,
+                "error_msg": ""
+            }
+        except Exception as e:
+            # Handle errors gracefully and return error response
+            return {
+                "status": Status.FAIL.value,
+                "source": self.source_name,
+                "media": [],
+                "error_type": ErrorType.PARSE_ERROR.value,
+                "error_msg": str(e)
+            }

@@ -5,6 +5,7 @@ Modern UI with real-time metrics, task management, and system monitoring
 
 import sys
 import asyncio
+import time
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
@@ -53,7 +54,7 @@ class MetricsUpdater(QObject):
             except Exception as e:
                 logger.error("Metrics update failed", extra={"context": {"error": str(e)}})
             
-            asyncio.sleep(self.interval_ms / 1000.0)
+            time.sleep(self.interval_ms / 1000.0)
     
     def stop(self):
         """Stop the updater"""
