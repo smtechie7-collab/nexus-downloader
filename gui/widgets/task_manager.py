@@ -66,6 +66,7 @@ class TaskManagerWidget(QWidget):
             "Task ID", "URL", "Status", "Progress", "Engine",
             "Created", "Error", "Actions"
         ])
+        self.table = self.task_table
         
         # Set column widths
         header = self.task_table.horizontalHeader()
@@ -109,7 +110,8 @@ class TaskManagerWidget(QWidget):
         layout.addLayout(stats_layout)
         
         self.setLayout(layout)
-        self._populate_sample_tasks()
+        self.task_table.setRowCount(0)
+        self._update_statistics()
     
     def _setup_auto_refresh(self):
         """Setup auto-refresh timer"""
@@ -214,6 +216,11 @@ class TaskManagerWidget(QWidget):
             action_item.setForeground(QColor(33, 150, 243))
             self.task_table.setItem(row, 7, action_item)
     
+    def set_tasks(self, tasks):
+        """Populate the task table with the provided task list."""
+        self._add_tasks_to_table(tasks)
+        self._update_statistics()
+
     def _pause_task(self):
         """Pause selected task"""
         current_row = self.task_table.currentRow()
@@ -261,8 +268,7 @@ class TaskManagerWidget(QWidget):
     
     def _refresh_tasks(self):
         """Refresh task list (would connect to backend in production)"""
-        # In production, this would fetch from TaskController
-        pass
+        self._update_statistics()
     
     def _update_statistics(self):
         """Update statistics labels"""

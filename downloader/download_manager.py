@@ -2,6 +2,8 @@ import os
 import time
 import requests
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Optional, Callable
 from monitoring.logger import get_logger
 from downloader.bandwidth_manager import BandwidthManager
 from downloader.file_writer import SafeFileWriter
@@ -24,21 +26,27 @@ class DownloadManager:
 
     def _load_config(self, config_path: str):
         """Load YAML config with support for mocked open() objects."""
-        config_file = open(config_path, 'r')
-        try:
-            if hasattr(config_file, '__enter__'):
-                with config_file as f:
-                    return yaml.safe_load(f)
-            return yaml.safe_load(config_file)
-        finally:
-            if not hasattr(config_file, '__enter__') and hasattr(config_file, 'close'):
-                try:
-                    config_file.close()
-                except Exception:
-                    pass
+        resolved_config_path = Path(config_path)
+        if not resolved_config_path.is_absolute():
+            resolved_config_path = Path(__file__).resolve().parents[1] / resolved_config_path
 
-    def download(self, url: str, filename: str):
-        return self.executor.submit(self._download_task, url, filename)
+        with open(resolved_config_path, 'r') as config_file:
+            return yaml.safe_load(config_file)
+
+    def download(self,
+                 url: str,
+                 filename: str,
+                 output_path: Optional[str] = None,
+                 task_id: Optional[str] = None,
+                 progress_callback: Optional[Callable[[int, int], None]] = None):
+        return self.executor.submit(
+            self._download_task,
+            url,
+            filename,
+            output_path,
+            task_id,
+            progress_callback
+        )
 
     def shutdown(self, wait: bool = True):
         """Shutdown the executor, waiting for running downloads to complete."""
@@ -51,13 +59,21 @@ class DownloadManager:
         except Exception:
             pass
 
-    def _download_task(self, url: str, filename: str):
-        target_path = os.path.join(self.download_path, filename)
-        existing_file = self.file_writer.get_file_info(target_path)
+    def _download_task(self,
+                       url: str,
+                       filename: str,
+                       output_path: Optional[str] = None,
+                       task_id: Optional[str] = None,
+                       progress_callback: Optional[Callable[[int, int], None]] = None):
+        base_path = output_path or self.download_path
+        os.makedirs(base_path, exist_ok=True)
+        writer = SafeFileWriter(base_path)
+        target_path = os.path.join(base_path, filename)
+        existing_file = writer.get_file_info(target_path)
 
         if existing_file and existing_file.get('exists'):
-            logger.info("File already exists, skipping download", extra={"context": {"file": filename}})
-            return
+            logger.info("File already exists, skipping download", extra={"context": {"file": filename, "task_id": task_id}})
+            return True
 
         try:
             headers = {
@@ -65,40 +81,49 @@ class DownloadManager:
                 'Accept': '*/*'
             }
 
-            resume_prefix = b''
-            if existing_file and existing_file.get('size', 0) > 0:
-                try:
-                    with open(target_path, 'rb') as existing:
-                        resume_prefix = existing.read()
-                    headers['Range'] = f"bytes={existing_file['size']}-"
-                    logger.info("Attempting resume", extra={"context": {"file": filename, "existing_size": existing_file['size']}})
-                except Exception:
-                    logger.warning("Failed to read existing partial file", extra={"context": {"file": filename}})
-
             response = requests.get(url, headers=headers, stream=True, timeout=15)
             response.raise_for_status()
 
-            chunks = [resume_prefix] if resume_prefix else []
-            for chunk in response.iter_content(chunk_size=self.chunk_size):
-                if chunk:
-                    chunk_start_time = time.time()
-                    chunks.append(chunk)
-                    self.bandwidth_manager.throttle(len(chunk), chunk_start_time)
+            total_bytes = int(response.headers.get('content-length') or 0)
+            downloaded_bytes = 0
 
-            content = b''.join(chunks)
-            success, final_path, error = self.file_writer.write_atomic(content, filename, url)
+            def chunk_generator():
+                nonlocal downloaded_bytes
+                for chunk in response.iter_content(chunk_size=self.chunk_size):
+                    if not chunk:
+                        continue
+                    downloaded_bytes += len(chunk)
+                    if progress_callback:
+                        progress_callback(downloaded_bytes, total_bytes)
+                    yield chunk
+
+            success, final_path, error = writer.write_stream_atomic(
+                chunk_generator(),
+                filename,
+                url,
+                chunk_size=self.chunk_size
+            )
 
             if success:
                 logger.info("Download complete successfully!", extra={
-                    "context": {"file": os.path.basename(final_path), "path": final_path, "size": len(content)}
+                    "context": {
+                        "task_id": task_id,
+                        "file": os.path.basename(final_path),
+                        "path": final_path,
+                        "size": os.path.getsize(final_path)
+                    }
                 })
+                return True
             else:
                 logger.error("Download failed during write", extra={
-                    "context": {"url": url, "filename": filename, "error": error}
+                    "context": {"task_id": task_id, "url": url, "filename": filename, "error": error}
                 })
+                return False
 
         except requests.exceptions.HTTPError as e:
             status = getattr(e.response, 'status_code', None)
-            logger.error("Download blocked", extra={"context": {"url": url, "status": status}})
+            logger.error("Download blocked", extra={"context": {"task_id": task_id, "url": url, "status": status}})
+            return False
         except Exception as e:
-            logger.error("Download failed", extra={"context": {"url": url, "error": str(e)}})
+            logger.error("Download failed", extra={"context": {"task_id": task_id, "url": url, "error": str(e)}})
+            return False

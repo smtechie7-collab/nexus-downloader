@@ -39,6 +39,13 @@ class DashboardWidget(QWidget):
         # Downloaded bytes
         self.bytes_downloaded_widget = self._create_metric_card("Downloaded", "0 MB", "#FF9800")
         metrics_layout.addWidget(self.bytes_downloaded_widget)
+
+        self.metric_cards = [
+            self.total_requests_widget,
+            self.success_rate_widget,
+            self.failed_requests_widget,
+            self.bytes_downloaded_widget,
+        ]
         
         layout.addLayout(metrics_layout)
         

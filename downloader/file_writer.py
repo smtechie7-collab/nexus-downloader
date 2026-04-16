@@ -144,11 +144,17 @@ class SafeFileWriter:
                 temp_path = Path(temp_file.name)
 
                 # Stream content to temporary file
-                while True:
-                    chunk = stream.read(chunk_size)
-                    if not chunk:
-                        break
-                    temp_file.write(chunk)
+                if hasattr(stream, 'read'):
+                    while True:
+                        chunk = stream.read(chunk_size)
+                        if not chunk:
+                            break
+                        temp_file.write(chunk)
+                else:
+                    for chunk in stream:
+                        if not chunk:
+                            continue
+                        temp_file.write(chunk)
 
                 temp_file.flush()
                 os.fsync(temp_file.fileno())  # Force write to disk

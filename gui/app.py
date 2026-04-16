@@ -3,9 +3,11 @@ Nexus Downloader - Production-Grade PyQt6 Desktop Application
 Dual-Mode UI: Simple Mode (Beginners) + Advanced Mode (Power Users)
 """
 
+import os
 import sys
 import asyncio
 import time
+import urllib.parse
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
@@ -16,6 +18,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QThread, QSettings
 from PyQt6.QtGui import QIcon, QColor, QFont
+from datetime import datetime
+import uuid
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -27,6 +31,21 @@ from gui.widgets.metrics_viewer import MetricsViewerWidget
 from gui.widgets.log_viewer import LogViewerWidget
 from gui.widgets.settings_panel import SettingsPanelWidget
 from gui.styles import apply_stylesheet, COLORS
+from core.router import Router
+from core.priority_queue import TaskQueue
+from core.resource_guard import ResourceGuard
+from downloader.download_manager import DownloadManager
+from engines.fast_engine_v1 import FastEngineV1
+from engines.headless_engine_v1 import HeadlessEngineV1
+from engines.media_engine_v1 import MediaEngineV1
+from engines.spider_engine_v1 import SpiderEngineV1
+from engines.stealth_engine_v1 import StealthEngineV1
+from storage.deduplicator import Deduplicator
+from storage.cache import CacheLayer
+from pipeline.validator import validate_media
+from pipeline.parser import URLParser
+from network.ssrf_guard import SSRFGuard
+from utils.constants import Priority
 from monitoring.metrics import get_metrics
 from monitoring.logger import get_logger
 
@@ -76,8 +95,9 @@ class NexusDownloaderApp(QMainWindow):
         self.settings = QSettings("NexusDownloader", "NexusDownloader")
         self.advanced_mode = self.settings.value("advanced_mode", False, type=bool)
         
-        # Initialize UI
+        # Initialize UI and pipeline
         self._init_ui()
+        self._init_pipeline()
         self._setup_metrics_updater()
         
         logger.info("Application initialized", extra={"context": {"mode": "advanced" if self.advanced_mode else "simple"}})
@@ -150,6 +170,8 @@ class NexusDownloaderApp(QMainWindow):
             self._create_advanced_mode()
         else:
             self._create_simple_mode()
+
+        self._connect_signals()
     
     def _create_simple_mode(self):
         """Simple mode interface for beginners"""
@@ -282,17 +304,26 @@ class NexusDownloaderApp(QMainWindow):
             self.simple_filename_label.setStyleSheet("color: #ca3e1f;")
             return
         
+        if not output_path:
+            output_path = str(Path.home() / "Downloads")
+            self.simple_output_input.setText(output_path)
+
+        os.makedirs(output_path, exist_ok=True)
+        self.simple_current_request_url = url
         self.simple_filename_label.setText(f"Downloading: {url}")
         self.simple_filename_label.setStyleSheet("color: #0d7377;")
         self.simple_progress.setValue(0)
+        self.simple_speed_label.setText("Speed: 0 MB/s  |  Time Remaining: --")
         self.simple_start_btn.setEnabled(False)
         self.simple_pause_btn.setEnabled(True)
         self.simple_cancel_btn.setEnabled(True)
-        
+        self.simple_paused = False
+        self._schedule_simple_download(url, output_path)
         logger.info("Simple download started", extra={"context": {"url": url, "output": output_path}})
     
     def _on_simple_pause(self):
         """Pause download in simple mode"""
+        self.simple_paused = True
         self.simple_start_btn.setEnabled(True)
         self.simple_pause_btn.setEnabled(False)
         self.simple_filename_label.setText("Download paused")
@@ -300,12 +331,18 @@ class NexusDownloaderApp(QMainWindow):
     
     def _on_simple_cancel(self):
         """Cancel download in simple mode"""
+        self.simple_paused = True
         self.simple_start_btn.setEnabled(True)
         self.simple_pause_btn.setEnabled(False)
         self.simple_cancel_btn.setEnabled(False)
         self.simple_progress.setValue(0)
         self.simple_filename_label.setText("Download cancelled")
         self.simple_filename_label.setStyleSheet("color: #888;")
+        if self.simple_current_request_url:
+            for task_id, task in self.pipeline_tasks.items():
+                if task.get('request_url') == self.simple_current_request_url and task['status'] in ['Pending', 'Running']:
+                    task['status'] = 'Cancelled'
+            self._refresh_task_manager()
         logger.info("Download cancelled")
     
     def _setup_status_bar(self):
@@ -325,8 +362,215 @@ class NexusDownloaderApp(QMainWindow):
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self._update_metrics)
         self.update_timer.start(1000)  # Update every second
-    
-    def _update_metrics(self):
+
+    def _init_pipeline(self):
+        """Initialize backend pipeline objects and worker threads."""
+        self.pipeline_tasks = {}
+        self.simple_current_request_url = None
+        self.simple_start_time = None
+        self.simple_paused = False
+
+        self.guard = ResourceGuard()
+        self.router = Router()
+        self.queue = TaskQueue()
+        self.dedup = Deduplicator()
+        self.cache = CacheLayer()
+        self.download_manager = DownloadManager()
+        self.ssrf_guard = SSRFGuard()
+        self.url_parser = URLParser()
+
+        self._register_engines()
+
+        self.pipeline_loop = asyncio.new_event_loop()
+        self.pipeline_thread = threading.Thread(target=self._run_async_loop, daemon=True)
+        self.pipeline_thread.start()
+
+        self.download_thread = threading.Thread(target=self._download_worker, daemon=True)
+        self.download_thread.start()
+
+    def _register_engines(self):
+        self.router.register_engine("fast_engine", FastEngineV1())
+        self.router.register_engine("headless_engine", HeadlessEngineV1())
+        self.router.register_engine("media_engine", MediaEngineV1())
+        self.router.register_engine("spider_engine", SpiderEngineV1())
+        self.router.register_engine("stealth_engine", StealthEngineV1())
+
+    def _run_async_loop(self):
+        asyncio.set_event_loop(self.pipeline_loop)
+        self.pipeline_loop.run_forever()
+
+    def _schedule_simple_download(self, url: str, output_path: str):
+        self.simple_current_request_url = url
+        self.simple_start_time = time.time()
+        self.simple_paused = False
+        future = asyncio.run_coroutine_threadsafe(
+            self._process_url_request(url, output_path),
+            self.pipeline_loop
+        )
+        future.add_done_callback(lambda f: self._on_request_processed(f, url))
+
+    def _on_request_processed(self, future, url: str):
+        try:
+            future.result()
+        except Exception as e:
+            self._defer_ui_update(lambda: self._log_event("ERROR", f"Pipeline error for {url}: {e}", "Pipeline"))
+
+    async def _process_url_request(self, url: str, output_path: str):
+        if not self.ssrf_guard.validate_request(url):
+            self._log_event("WARNING", f"URL blocked by SSRF protection: {url}", "SSRFGuard")
+            return False
+
+        parsed_info = self.url_parser.extract_media_info(url)
+        normalized_url = parsed_info['normalized_url']
+        self._log_event("INFO", f"URL normalized for download: {normalized_url}", "URLParser")
+
+        if self.dedup.is_duplicate(normalized_url):
+            self._log_event("WARNING", f"Duplicate media URL skipped: {normalized_url}", "Deduplicator")
+            return False
+
+        result = await self.router.route(normalized_url)
+        if result.get('status') != 'success':
+            self._log_event("ERROR", f"Extraction failed: {result.get('error_msg', 'unknown')}", "Router")
+            return False
+
+        media_list = result.get('media', [])
+        if not media_list:
+            self._log_event("WARNING", f"No media items discovered for URL: {url}", "Router")
+            return False
+
+        for media in media_list:
+            valid = await validate_media(media)
+            if not valid:
+                self._log_event("WARNING", f"Media validation failed: {media.get('url')}", "Validator")
+                continue
+
+            task_id = uuid.uuid4().hex
+            engine_name = result.get('source', 'unknown')
+            title = media.get('metadata', {}).get('title') or parsed_info.get('title', 'download')
+            filename = self._derive_filename(media.get('url', url), title)
+            request_url = url
+
+            self.pipeline_tasks[task_id] = {
+                'id': task_id,
+                'url': media.get('url', url),
+                'status': 'Pending',
+                'progress': 0,
+                'engine': engine_name,
+                'created': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'error': '',
+                'request_url': request_url,
+                'filename': filename,
+                'output_path': output_path,
+            }
+            self.queue.add({
+                'task_id': task_id,
+                'url': media.get('url', url),
+                'filename': filename,
+                'output_path': output_path,
+                'request_url': request_url,
+                'engine': engine_name,
+            }, Priority.HIGH)
+            self._refresh_task_manager()
+            self._log_event("INFO", f"Queued download task {task_id} for {filename}", "Pipeline")
+
+        return True
+
+    def _derive_filename(self, media_url: str, title: str) -> str:
+        parsed = urllib.parse.urlparse(media_url)
+        extension = os.path.splitext(parsed.path)[1] or '.bin'
+        cleaned_title = title.strip().replace(' ', '_')
+        return f"{cleaned_title}{extension}"
+
+    def _download_worker(self):
+        while True:
+            task = self.queue.get(timeout=2)
+            if task is None:
+                continue
+
+            task_id = task.get('task_id')
+            if not task_id or task_id not in self.pipeline_tasks:
+                continue
+
+            if self.pipeline_tasks[task_id]['status'] in ['Cancelled', 'Paused']:
+                self._log_event("INFO", f"Skipping task {task_id} because status is {self.pipeline_tasks[task_id]['status']}", "DownloadWorker")
+                continue
+
+            self.pipeline_tasks[task_id]['status'] = 'Running'
+            self._defer_refresh()
+
+            future = self.download_manager.download(
+                task['url'],
+                task['filename'],
+                output_path=task.get('output_path'),
+                task_id=task_id,
+                progress_callback=lambda downloaded, total: self._download_progress_callback(task_id, downloaded, total)
+            )
+
+            success = False
+            try:
+                success = future.result()
+            except Exception as e:
+                self._log_event("ERROR", f"Download failed for task {task_id}: {e}", "DownloadWorker")
+
+            if success and self.pipeline_tasks[task_id]['status'] != 'Cancelled':
+                self.pipeline_tasks[task_id]['status'] = 'Completed'
+                self.pipeline_tasks[task_id]['progress'] = 100
+                self._log_event("INFO", f"Task {task_id} completed", "DownloadWorker")
+                self._defer_ui_update(lambda: self._append_recent_download(self.pipeline_tasks[task_id]))
+            elif not success and self.pipeline_tasks[task_id]['status'] != 'Cancelled':
+                self.pipeline_tasks[task_id]['status'] = 'Failed'
+                self.pipeline_tasks[task_id]['error'] = 'Download error'
+
+            self._defer_refresh()
+
+    def _download_progress_callback(self, task_id: str, downloaded: int, total: int):
+        task = self.pipeline_tasks.get(task_id)
+        if not task:
+            return
+
+        if total:
+            task['progress'] = min(100, int(downloaded * 100 / total))
+        else:
+            task['progress'] = min(99, int(downloaded / 1024))
+
+        if self.simple_current_request_url and task.get('request_url') == self.simple_current_request_url:
+            self._defer_ui_update(lambda: self._update_simple_progress(task['progress'], downloaded, total))
+
+        self._defer_refresh()
+
+    def _update_simple_progress(self, progress: int, downloaded: int, total: int):
+        self.simple_progress.setValue(progress)
+        simple_label = f"Downloaded {downloaded // 1024} KB"
+        if total:
+            simple_label += f" / {total // 1024} KB"
+        self.simple_speed_label.setText(f"Speed: -- | {simple_label}")
+
+    def _append_recent_download(self, task: dict):
+        if hasattr(self, 'simple_recent'):
+            self.simple_recent.append(f"{task['filename']} ({task['url']}) - {task['status']}")
+
+    def _defer_refresh(self):
+        QTimer.singleShot(0, self._refresh_task_manager)
+
+    def _defer_ui_update(self, callback):
+        QTimer.singleShot(0, callback)
+
+    def _refresh_task_manager(self):
+        if self.advanced_mode and hasattr(self, 'task_manager'):
+            self.task_manager.set_tasks(list(self.pipeline_tasks.values()))
+            self.task_manager.update_statistics()
+
+    def _log_event(self, level: str, message: str, module: str = 'UI'):
+        log_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'level': level,
+            'module': module,
+            'message': message
+        }
+        if hasattr(self, 'log_viewer'):
+            self.log_viewer.add_log(log_entry)
+
+    def _on_simple_pause(self):
         """Update displayed metrics"""
         try:
             metrics = get_metrics()
@@ -365,6 +609,26 @@ class NexusDownloaderApp(QMainWindow):
     
     def _handle_task_action(self, action: str, task_id: str):
         """Handle task manager actions"""
+        task = self.pipeline_tasks.get(task_id)
+        if not task:
+            self._log_event("WARNING", f"Task {task_id} not found", "TaskManager")
+            return
+
+        if action == "pause" and task['status'] in ['Pending', 'Running']:
+            task['status'] = 'Paused'
+            self.simple_paused = True
+            self._log_event("INFO", f"Task {task_id} paused", "TaskManager")
+        elif action == "resume" and task['status'] == 'Paused':
+            task['status'] = 'Pending'
+            self.simple_paused = False
+            self._log_event("INFO", f"Task {task_id} resumed", "TaskManager")
+        elif action == "cancel" and task['status'] not in ['Completed', 'Cancelled']:
+            task['status'] = 'Cancelled'
+            self._log_event("INFO", f"Task {task_id} cancelled", "TaskManager")
+        else:
+            self._log_event("WARNING", f"Unsupported action {action} for task {task_id}", "TaskManager")
+
+        self._refresh_task_manager()
         logger.info("Task action requested", extra={"context": {"action": action, "task_id": task_id}})
     
     def closeEvent(self, event):

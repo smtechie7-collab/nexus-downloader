@@ -22,7 +22,7 @@ class MetricsViewerWidget(QWidget):
         layout = QVBoxLayout()
         
         # Tab widget for different metric views
-        tabs = QTabWidget()
+        self.tabs = QTabWidget()
         
         # Domain stats tab
         self.domain_tab = self._create_domain_stats_tab()

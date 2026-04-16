@@ -1,6 +1,7 @@
 import asyncio
 import re
 import json
+import urllib.parse
 from typing import Dict, Any, List, Optional
 import aiohttp
 from engines.base_engine import BaseEngine
@@ -39,16 +40,20 @@ class MediaEngineV1(BaseEngine):
                 "context": {"url": url}
             })
             
-            # Determine platform
+            # If the URL already points to a known media file, use it directly.
             platform = self._get_platform(url)
-            
-            # Try platform-specific handler
-            if platform and platform in self._platform_handlers:
-                handler = self._platform_handlers[platform]
-                media = await handler(url)
+            direct_media = self._extract_direct_media(url)
+            if direct_media:
+                media = direct_media
+                platform = 'direct'
             else:
-                # Generic media extraction
-                media = await self._extract_generic(url)
+                # Try platform-specific handler
+                if platform and platform in self._platform_handlers:
+                    handler = self._platform_handlers[platform]
+                    media = await handler(url)
+                else:
+                    # Generic media extraction
+                    media = await self._extract_generic(url)
             
             if not media:
                 return self._format_error(
@@ -123,6 +128,34 @@ class MediaEngineV1(BaseEngine):
         
         return media_list
     
+    def _extract_direct_media(self, url: str) -> Optional[List[Dict[str, Any]]]:
+        """Return a direct media record if the URL points to a known file type."""
+        parsed = urllib.parse.urlparse(url)
+        path = parsed.path or ''
+        if '.' not in path:
+            return None
+
+        extension = path.rsplit('.', 1)[-1].lower()
+        video_exts = {'mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'm4v'}
+        audio_exts = {'mp3', 'wav', 'flac', 'aac', 'ogg', 'wma'}
+        document_exts = {'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'}
+
+        if extension in video_exts:
+            media_type = 'video'
+        elif extension in audio_exts:
+            media_type = 'audio'
+        elif extension in document_exts:
+            media_type = 'document'
+        else:
+            return None
+
+        return [{
+            "url": url,
+            "type": media_type,
+            "quality": "original",
+            "metadata": {"platform": "direct", "extension": extension}
+        }]
+
     async def _extract_vimeo(self, url: str) -> List[Dict]:
         """Extracts video info from Vimeo."""
         headers = self._get_headers()
@@ -233,6 +266,11 @@ class MediaEngineV1(BaseEngine):
                         r'https?://[^"\s]*\.mp4',
                         r'https?://[^"\s]*\.webm',
                         r'https?://[^"\s]*\.m3u8',
+                        r'https?://[^"\s]*\.mp3',
+                        r'https?://[^"\s]*\.pdf',
+                        r'https?://[^"\s]*\.docx?',
+                        r'https?://[^"\s]*\.xlsx?',
+                        r'https?://[^"\s]*\.pptx?',
                     ]
                     
                     for pattern in file_patterns:

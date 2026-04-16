@@ -113,6 +113,7 @@ class URLParser:
             video_exts = {'mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'm4v'}
             audio_exts = {'mp3', 'wav', 'flac', 'aac', 'ogg', 'wma'}
             image_exts = {'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'}
+            document_exts = {'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'}
 
             if info['extension'] in video_exts:
                 info['likely_type'] = 'video'
@@ -120,6 +121,8 @@ class URLParser:
                 info['likely_type'] = 'audio'
             elif info['extension'] in image_exts:
                 info['likely_type'] = 'image'
+            elif info['extension'] in document_exts:
+                info['likely_type'] = 'document'
 
         except Exception as e:
             logger.warning("Media info extraction failed", extra={"context": {"url": url, "error": str(e)}})

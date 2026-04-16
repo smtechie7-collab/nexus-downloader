@@ -124,15 +124,15 @@ class LogViewerWidget(QWidget):
     
     def _poll_new_logs(self):
         """Poll for new logs periodically"""
-        # In production, this would read from the actual logging system
-        pass
+        self._refresh_display()
     
-    def _refresh_display(self):
+    def _refresh_display(self, logs=None):
         """Refresh the log display"""
+        logs = logs if logs is not None else self.logs
         self.log_display.clear()
         cursor = self.log_display.textCursor()
         
-        for log in self.logs[-self.max_logs_spin.value():]:
+        for log in logs[-self.max_logs_spin.value():]:
             self._append_log_entry(log)
         
         # Auto-scroll to bottom
@@ -140,7 +140,24 @@ class LogViewerWidget(QWidget):
             cursor.movePosition(QTextCursor.MoveOperation.End)
             self.log_display.setTextCursor(cursor)
         
-        self.log_count_label.setText(f"Logs: {len(self.logs)}")
+        self.log_count_label.setText(f"Logs: {len(logs)}")
+
+    def _apply_filters(self):
+        """Apply log filters"""
+        search_text = self.search_box.text().lower()
+        selected_level = self.level_filter.currentText()
+        filtered_logs = []
+
+        for log in self.logs:
+            if selected_level != "All" and log.get("level", "").upper() != selected_level:
+                continue
+            if search_text:
+                searchable = " ".join([str(log.get(key, "")).lower() for key in ["timestamp", "level", "module", "message"]])
+                if search_text not in searchable:
+                    continue
+            filtered_logs.append(log)
+
+        self._refresh_display(filtered_logs)
     
     def _append_log_entry(self, log: dict):
         """Append a log entry with color coding"""
@@ -182,11 +199,6 @@ class LogViewerWidget(QWidget):
         
         self.log_display.setTextCursor(cursor)
     
-    def _apply_filters(self):
-        """Apply log filters"""
-        # Implement filtering logic
-        pass
-    
     def _clear_logs(self):
         """Clear all logs"""
         self.logs.clear()
@@ -215,4 +227,4 @@ class LogViewerWidget(QWidget):
                 QMessageBox.information(self, "Success", f"Logs exported to {file_path}")
             except Exception as e:
                 from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.error(self, "Error", f"Failed to export logs: {e}")
+                QMessageBox.critical(self, "Error", f"Failed to export logs: {e}")

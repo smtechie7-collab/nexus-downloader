@@ -248,14 +248,14 @@ class TestDownloadManager:
                     mock_response.raise_for_status.return_value = None
 
                     with patch('requests.get', return_value=mock_response):
-                        with patch.object(manager.file_writer, 'write_atomic') as mock_write:
+                        with patch.object(manager.file_writer, 'write_stream_atomic') as mock_write:
                             mock_write.return_value = (True, "/test/path", None)
 
                             # This should apply throttling
                             future = manager.download("https://example.com/test.bin", "test.bin")
                             future.result(timeout=5)
 
-                            # Verify write_atomic was called
+                            # Verify write_stream_atomic was called
                             mock_write.assert_called_once()
 
     def test_download_error_handling(self, download_manager):
@@ -342,7 +342,7 @@ class TestDownloadResume:
             mock_response.raise_for_status.return_value = None
             mock_get.return_value = mock_response
 
-            with patch.object(download_manager.file_writer, 'write_atomic') as mock_write:
+            with patch.object(download_manager.file_writer, 'write_stream_atomic') as mock_write:
                 mock_write.return_value = (True, "/test/path", None)
 
                 # Start multiple downloads

@@ -42,6 +42,12 @@ class DomainStrategy:
         self.register_pattern_rule(r".*\.mp4$", "fast_engine")
         self.register_pattern_rule(r".*\.m3u8$", "media_engine")
         self.register_pattern_rule(r".*\.webm$", "fast_engine")
+        self.register_pattern_rule(r".*\.mp3$", "fast_engine")
+        self.register_pattern_rule(r".*\.pdf$", "fast_engine")
+        self.register_pattern_rule(r".*\.docx?$", "fast_engine")
+        self.register_pattern_rule(r".*\.xlsx?$", "fast_engine")
+        self.register_pattern_rule(r".*\.pptx?$", "fast_engine")
+        self.register_pattern_rule(r".*\.zip$", "fast_engine")
     
     def register_engine(self, engine_name: str, engine_instance: Callable):
         """Registers an engine to the strategy."""

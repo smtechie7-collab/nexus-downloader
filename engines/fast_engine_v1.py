@@ -1,4 +1,5 @@
 import asyncio
+import urllib.parse
 from typing import Dict, Any
 from engines.base_engine import BaseEngine
 from utils.constants import Status, ErrorType
@@ -17,17 +18,22 @@ class FastEngineV1(BaseEngine):
             # Simulating basic parsing logic (Sandbox Test)
             if "error" in url:
                 raise ValueError("Simulated parsing error")
-            
+
+            parsed = urllib.parse.urlparse(url)
+            path = parsed.path or ''
+            extension = path.rsplit('.', 1)[-1].lower() if '.' in path else ''
+            media_type = 'video' if extension in {'mp4', 'webm', 'mkv', 'mov', 'avi', 'flv'} else 'audio' if extension in {'mp3', 'wav', 'flac', 'aac', 'ogg'} else 'document' if extension in {'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'} else 'other'
+            media_url = url if extension else "https://www.w3schools.com/html/mov_bbb.mp4"
+
             return {
                 "status": Status.SUCCESS.value,
                 "source": self.source_name,
                 "media": [
                     {
-                        # Changed to a highly reliable public test video
-                        "url": "https://www.w3schools.com/html/mov_bbb.mp4",
-                        "type": "video",
-                        "quality": "1080p",
-                        "metadata": {"title": "Big_Buck_Bunny_Test"}
+                        "url": media_url,
+                        "type": media_type,
+                        "quality": "original" if extension else "1080p",
+                        "metadata": {"title": path.rsplit('/', 1)[-1] or "download"}
                     }
                 ],
                 "error_type": ErrorType.NONE.value,

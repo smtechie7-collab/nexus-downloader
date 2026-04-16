@@ -3,6 +3,7 @@ import sys
 import os
 import asyncio
 import threading
+import urllib.parse
 
 # VS IntelliSense aur Runtime dono ke liye absolute path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -75,12 +76,21 @@ def download_worker(queue: TaskQueue, download_manager: DownloadManager):
     while True:
         task = queue.get(timeout=3)
         if task is None:
-            break 
-            
+            break
+
         url = str(task['url'])
-        filename = task['metadata'].get('title', 'download') + ".mp4"
-        download_manager.download(url, filename)
-        queue.task_done()
+        title = task['metadata'].get('title', 'download')
+        ext = os.path.splitext(urllib.parse.urlparse(url).path)[1] or '.bin'
+        filename = title + ext
+
+        future = download_manager.download(url, filename)
+
+        try:
+            future.result()
+        except Exception as e:
+            logger.error("Download task failed", extra={"context": {"url": url, "error": str(e)}})
+        finally:
+            queue.task_done()
 
 async def main():
     logger.info("Nexus Zenith Pipeline v5.0 (VS Studio Optimized)")
@@ -111,11 +121,8 @@ async def main():
     logger.info("Starting Download Plane")
     # Run download worker in separate thread to avoid blocking async event loop
     download_thread = threading.Thread(target=download_worker, args=(queue, download_manager))
-    download_thread.daemon = True
     download_thread.start()
-    
-    # Wait for queue to be processed
-    queue._queue.join()  # Wait for all tasks to be done
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    # Wait for queue to be processed and downloads to complete
+    queue._queue.join()  # Wait for all tasks to be done
+    download_thread.join(timeout=10)
