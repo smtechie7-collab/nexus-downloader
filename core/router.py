@@ -9,6 +9,8 @@ from core.domain_strategy import DomainStrategy
 logger = get_logger("Router")
 
 class Router:
+    ENGINE_TIMEOUT_SECONDS = 10
+
     def __init__(self):
         self.engines = {}
         self.rate_limiter = RateLimiter()  # Injected Rate Limiter
@@ -30,6 +32,7 @@ class Router:
             return self._format_error("router", ErrorType.PARSE_ERROR, "No engines available")
 
         # Try engines in fallback chain
+        timeout_occurred = False
         for engine_name in engine_chain:
             engine = self.engines.get(engine_name)
             if not engine:
@@ -42,7 +45,7 @@ class Router:
 
                 # 2. SANDBOX (Engine Execution)
                 logger.info("Trying engine", extra={"context": {"url": url, "engine": engine_name}})
-                output = await engine.extract(url)
+                output = await asyncio.wait_for(engine.extract(url), timeout=self.ENGINE_TIMEOUT_SECONDS)
 
                 # 3. SCHEMA ENFORCEMENT
                 if not validate(output):
@@ -54,6 +57,7 @@ class Router:
                 return output
 
             except asyncio.TimeoutError:
+                timeout_occurred = True
                 logger.warning("Engine timeout, trying next engine",
                              extra={"context": {"url": url, "engine": engine_name, "error_type": ErrorType.NETWORK_ERROR.value}})
                 continue  # Try next engine
@@ -63,6 +67,8 @@ class Router:
                 continue  # Try next engine
 
         # All engines in chain failed
+        if timeout_occurred:
+            return self._format_error("router", ErrorType.NETWORK_ERROR, f"Timed out while processing URL: {url}")
         return self._format_error("router", ErrorType.PARSE_ERROR, f"All engines failed for URL: {url}")
 
     def _format_error(self, source: str, error_type: ErrorType, msg: str) -> Dict[str, Any]:

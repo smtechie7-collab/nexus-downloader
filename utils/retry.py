@@ -1,5 +1,6 @@
 import asyncio
 import random
+import time
 from typing import TypeVar, Callable, Any, Optional
 from monitoring.logger import get_logger
 
@@ -183,8 +184,8 @@ def retry_sync(func: Callable,
             
             if on_retry:
                 on_retry(attempt, delay_ms, e)
-            
-            asyncio.sleep(delay_ms / 1000.0)
+
+            time.sleep(delay_ms / 1000.0)
     
     raise RetryError(
         f"Failed after {config.max_attempts} attempts: {str(last_exception)}"

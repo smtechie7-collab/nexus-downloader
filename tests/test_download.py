@@ -14,6 +14,18 @@ from core.resource_guard import ResourceGuard
 from core.rate_limiter import RateLimiter
 
 
+@pytest.fixture
+def download_manager(tmp_path):
+    """Shared download manager fixture for integration tests."""
+    with patch('builtins.open', Mock()):
+        with patch('yaml.safe_load', return_value={
+            'download': {'path': str(tmp_path), 'chunk_size': 1024},
+            'resources': {'max_threads': 1},
+            'bandwidth': {'max_kbps': 100}
+        }):
+            yield DownloadManager("config.yaml")
+
+
 class TestBandwidthManager:
     """Test bandwidth management functionality."""
 
@@ -212,7 +224,8 @@ class TestDownloadManager:
             mock_info.return_value = {'exists': True}
 
             # This should not actually download
-            download_manager.download("https://example.com/test.mp4", filename)
+            future = download_manager.download("https://example.com/test.mp4", filename)
+            future.result(timeout=5)
 
             # Verify file_writer was checked
             mock_info.assert_called()
@@ -239,7 +252,8 @@ class TestDownloadManager:
                             mock_write.return_value = (True, "/test/path", None)
 
                             # This should apply throttling
-                            manager.download("https://example.com/test.bin", "test.bin")
+                            future = manager.download("https://example.com/test.bin", "test.bin")
+                            future.result(timeout=5)
 
                             # Verify write_atomic was called
                             mock_write.assert_called_once()

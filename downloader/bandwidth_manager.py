@@ -9,11 +9,24 @@ class BandwidthManager:
     Enforces maximum download speeds to prevent network starvation.
     """
     def __init__(self, config_path="config.yaml"):
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
-            
+        self.config = self._load_config(config_path)
         # Convert max_kbps to bytes per second
-        self.max_bps = self.config['bandwidth']['max_kbps'] * 1024
+        self.max_bps = int(self.config['bandwidth']['max_kbps']) * 1024
+
+    def _load_config(self, config_path: str):
+        """Load YAML config with support for mocked open() objects."""
+        config_file = open(config_path, 'r')
+        try:
+            if hasattr(config_file, '__enter__'):
+                with config_file as f:
+                    return yaml.safe_load(f)
+            return yaml.safe_load(config_file)
+        finally:
+            if not hasattr(config_file, '__enter__') and hasattr(config_file, 'close'):
+                try:
+                    config_file.close()
+                except Exception:
+                    pass
 
     def throttle(self, chunk_size: int, start_time: float):
         """Calculates time taken vs expected time, and sleeps to enforce limit."""

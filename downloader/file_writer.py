@@ -186,14 +186,26 @@ class SafeFileWriter:
         current_time = time.time()
 
         try:
-            for temp_file in self.base_dir.glob("temp_*"):
-                if temp_file.is_file():
-                    file_age = current_time - temp_file.stat().st_mtime
+            with os.scandir(self.base_dir) as scan:
+                for entry in scan:
+                    if not entry.name.startswith("temp_") or not entry.is_file():
+                        continue
+
+                    file_path = Path(entry.path)
+                    stat_result = file_path.stat()
+                    mtime = getattr(stat_result, 'st_mtime', None)
+                    if mtime is None:
+                        continue
+                    try:
+                        file_age = current_time - float(mtime)
+                    except (TypeError, ValueError):
+                        continue
+
                     if file_age > max_age_seconds:
-                        temp_file.unlink()
+                        os.unlink(entry.path)
                         cleaned_count += 1
                         logger.debug("Cleaned up temp file", extra={
-                            "context": {"file": str(temp_file), "age_seconds": int(file_age)}
+                            "context": {"file": entry.path, "age_seconds": int(file_age)}
                         })
 
         except Exception as e:
